@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Battle Test</title>
+</head>
+<body>
+  <h1>Battle</h1>
+  <textarea id="input" rows="20" cols="50">
+      {
+        "rounds":6,
+        "attacker": [
+            {
+                "name": 123,
+                "ships": [
+                    {"shipid":12, "attack": 400.0, "hull": 2700.0, "shield": 50.0, "explode": 0.7, "amount": 1000000, "rapidfire":{"201":10,"11":5,"10":3} },
+                    {"shipid":13, "attack": 1000.0, "hull": 6000.0, "shield": 50.0, "explode": 0.7, "amount": 1000000, "rapidfire":{"444":10} }
+                    
+                ]
+            }
+        ],
+        "defender": [
+                    {
+                "name": 1234,
+                "ships": [
+                    {"shipid":10, "attack": 400.0, "hull": 2700.0, "shield": 50.0, "explode": 0.7, "amount": 1000000, "rapidfire":{"201":10} },
+                    {"shipid":11, "attack": 1000.0, "hull": 6000.0, "shield": 50.0, "explode": 0.7, "amount": 1000000, "rapidfire":{"444":10} }
+                    
+                ]
+            }
+        ]
+    }
+  </textarea>
+  <button id="battlebutton" onclick="send()">Send</button>
+<div id="json-viewer"></div>
+
+
+  <script>
+function createJsonViewer(container, data, collapsedLevels = 4) {
+    container.innerHTML = "";
+    container.style.fontFamily = "monospace";
+
+    function render(value, depth = 0) {
+        const type = typeof value;
+
+        // Primitive values
+        if (value === null || type !== "object") {
+            const span = document.createElement("span");
+            span.textContent = JSON.stringify(value);
+            span.style.color =
+                type === "string" ? "green" :
+                type === "number" ? "blue" :
+                type === "boolean" ? "purple" : "gray";
+            return span;
+        }
+
+        const wrapper = document.createElement("div");
+        wrapper.style.marginLeft = "16px";
+
+        const isArray = Array.isArray(value);
+
+        const toggle = document.createElement("span");
+        toggle.style.cursor = "pointer";
+        toggle.style.marginRight = "6px";
+
+        const content = document.createElement("div");
+
+        // Determine initial state based on depth
+        const isInitiallyCollapsed = depth >= collapsedLevels;
+
+        content.style.display = isInitiallyCollapsed ? "none" : "block";
+        toggle.textContent = isInitiallyCollapsed
+            ? (isArray ? "[+]" : "{+}")
+            : (isArray ? "[-]" : "{-}");
+
+        toggle.onclick = () => {
+            const isOpen = content.style.display === "block";
+            content.style.display = isOpen ? "none" : "block";
+            toggle.textContent = isOpen
+                ? (isArray ? "[+]" : "{+}")
+                : (isArray ? "[-]" : "{-}");
+        };
+
+        Object.entries(value).forEach(([key, val]) => {
+            const line = document.createElement("div");
+
+            const keySpan = document.createElement("span");
+            keySpan.textContent = `"${key}": `;
+            keySpan.style.color = "brown";
+
+            line.appendChild(keySpan);
+            line.appendChild(render(val, depth + 1));
+            content.appendChild(line);
+        });
+
+        wrapper.appendChild(toggle);
+        wrapper.appendChild(content);
+
+        return wrapper;
+    }
+
+    container.appendChild(render(data, 0));
+}
+
+    async function send() {
+        document.getElementById("battlebutton").disabled=true;
+        const res = await fetch("/battle", {
+        method: "POST",
+        body: document.getElementById("input").value
+      });
+
+      const text = await res.json();
+      //document.getElementById("output").innerText = JSON.stringify(text, null, 1);
+      createJsonViewer(document.getElementById("json-viewer"), text);
+        document.getElementById("battlebutton").disabled=false;
+    }
+  </script>
+</body>
+</html>

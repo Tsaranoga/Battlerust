@@ -1,0 +1,113 @@
+[tasks.test-all-features]
+script = [
+'''
+#!/usr/bin/env bash
+set -e
+
+flags=(explode bigshield shrapnel perround stun escape rfcancel)
+
+for i in $(seq 0 127); do
+  features=""
+
+  for j in "${!flags[@]}"; do
+    if (( i & (1 << j) )); then
+      if [ -z "$features" ]; then
+        features="${flags[$j]}"
+      else
+        features="${features},${flags[$j]}"
+      fi
+    fi
+  done
+
+  echo "Building config $i: ${features:-<none>}"
+
+  if [ -n "$features" ]; then
+    cargo zigbuild \
+      --release \
+      --target x86_64-unknown-linux-gnu.2.30 \
+      --no-default-features \
+      --features "$features"
+  else
+    cargo zigbuild \
+      --release \
+      --target x86_64-unknown-linux-gnu.2.30 \
+      --no-default-features
+  fi
+
+done
+'''
+]
+
+[tasks.build-small]
+script = [
+"mkdir -p allrelease",
+
+"cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.30 --no-default-features --features explode,rfcancel",
+"mkdir -p allrelease/x86_64-unknown-linux-gnu.2.30_min",
+"cp target/x86_64-unknown-linux-gnu/release/battlerust target/x86_64-unknown-linux-gnu/release/libbattlerustlib.so allrelease/x86_64-unknown-linux-gnu.2.30_min/",
+"cargo zigbuild --release --target x86_64-pc-windows-gnu --no-default-features --features explode,rfcancel",
+"mkdir -p allrelease/x86_64-pc-windows-gnu_min",
+"cp target/x86_64-pc-windows-gnu/release/battlerust.exe target/x86_64-pc-windows-gnu/release/battlerustlib.dll allrelease/x86_64-pc-windows-gnu_min/",
+
+"cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.30",
+"mkdir -p allrelease/x86_64-unknown-linux-gnu.2.30",
+"cp target/x86_64-unknown-linux-gnu/release/battlerust target/x86_64-unknown-linux-gnu/release/libbattlerustlib.so allrelease/x86_64-unknown-linux-gnu.2.30/",
+
+"cargo build --release",
+"mkdir -p allrelease/current",
+"cp target/release/battlerust target/x86_64-unknown-linux-gnu/release/libbattlerustlib.so allrelease/current/",
+# Windows
+"cargo zigbuild --release --target x86_64-pc-windows-gnu",
+"mkdir -p allrelease/x86_64-pc-windows-gnu",
+"cp target/x86_64-pc-windows-gnu/release/battlerust.exe target/x86_64-pc-windows-gnu/release/battlerustlib.dll allrelease/x86_64-pc-windows-gnu/",
+"cargo zigbuild --release --target wasm32-unknown-unknown --lib --no-default-features --features wasm",
+"wasm-bindgen target/wasm32-unknown-unknown/release/battlerustlib.wasm --out-dir allrelease/wasm --web",
+
+]
+
+[tasks.build-all]
+script = [
+"mkdir -p allrelease",
+"cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.30",
+"mkdir -p allrelease/x86_64-unknown-linux-gnu.2.30",
+"cp target/x86_64-unknown-linux-gnu/release/battlerust target/x86_64-unknown-linux-gnu/release/libbattlerustlib.so allrelease/x86_64-unknown-linux-gnu.2.30/",
+
+"cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.31",
+"mkdir -p allrelease/x86_64-unknown-linux-gnu.2.31",
+"cp target/x86_64-unknown-linux-gnu/release/battlerust target/x86_64-unknown-linux-gnu/release/libbattlerustlib.so allrelease/x86_64-unknown-linux-gnu.2.31/",
+
+"cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.32",
+"mkdir -p allrelease/x86_64-unknown-linux-gnu.2.32",
+"cp target/x86_64-unknown-linux-gnu/release/battlerust target/x86_64-unknown-linux-gnu/release/libbattlerustlib.so allrelease/x86_64-unknown-linux-gnu.2.32/",
+
+"cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.33",
+"mkdir -p allrelease/x86_64-unknown-linux-gnu.2.33",
+"cp target/x86_64-unknown-linux-gnu/release/battlerust target/x86_64-unknown-linux-gnu/release/libbattlerustlib.so allrelease/x86_64-unknown-linux-gnu.2.33/",
+
+"cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.34",
+"mkdir -p allrelease/x86_64-unknown-linux-gnu.2.34",
+"cp target/x86_64-unknown-linux-gnu/release/battlerust target/x86_64-unknown-linux-gnu/release/libbattlerustlib.so allrelease/x86_64-unknown-linux-gnu.2.34/",
+
+"cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.35",
+"mkdir -p allrelease/x86_64-unknown-linux-gnu.2.35",
+"cp target/x86_64-unknown-linux-gnu/release/battlerust target/x86_64-unknown-linux-gnu/release/libbattlerustlib.so allrelease/x86_64-unknown-linux-gnu.2.35/",
+
+"cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.36",
+"mkdir -p allrelease/x86_64-unknown-linux-gnu.2.36",
+"cp target/x86_64-unknown-linux-gnu/release/battlerust target/x86_64-unknown-linux-gnu/release/libbattlerustlib.so allrelease/x86_64-unknown-linux-gnu.2.36/",
+
+"cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.37",
+"mkdir -p allrelease/x86_64-unknown-linux-gnu.2.37",
+"cp target/x86_64-unknown-linux-gnu/release/battlerust target/x86_64-unknown-linux-gnu/release/libbattlerustlib.so allrelease/x86_64-unknown-linux-gnu.2.37/",
+
+"cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.38",
+"mkdir -p allrelease/x86_64-unknown-linux-gnu.2.38",
+"cp target/x86_64-unknown-linux-gnu/release/battlerust target/x86_64-unknown-linux-gnu/release/libbattlerustlib.so allrelease/x86_64-unknown-linux-gnu.2.38/",
+
+# Windows
+"cargo zigbuild --release --target x86_64-pc-windows-gnu",
+"mkdir -p allrelease/x86_64-pc-windows-gnu",
+"cp target/x86_64-pc-windows-gnu/release/battlerust.exe target/x86_64-pc-windows-gnu/release/battlerustlib.dll allrelease/x86_64-pc-windows-gnu/",
+"cargo zigbuild --release --target wasm32-unknown-unknown --lib --no-default-features --features wasm",
+"wasm-bindgen target/wasm32-unknown-unknown/release/battlerustlib.wasm --out-dir allrelease/wasm --web"
+]
