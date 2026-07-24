@@ -26,7 +26,7 @@ shrapnel = []
 perround = []
 flags_self=[]
 flags_other=[]
-wasm = ["explode","bigshield","shrapnel","perround","stun","escape"]
+wasm = ["all"]
 [dependencies]
 rand = "0.10.0"
 serde = {version="1.0.228" , features = ["derive"]}

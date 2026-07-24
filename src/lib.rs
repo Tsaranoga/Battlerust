@@ -402,8 +402,8 @@ pub fn create_all_ships(
     players: &[Player],
     ship_counts: &[Vec<usize>]
 ) -> (Vec<Ship>,Vec<ShipInfo>) {
-	let mut all_ships = Vec::new();
-    let mut all_ship_infos = Vec::new();
+    let mut all_ships = Vec::with_capacity(ship_counts.iter().flatten().sum());
+    let mut all_ship_infos = Vec::with_capacity(ship_counts.iter().map(Vec::len).sum());
 	for (player_idx, player) in players.iter().enumerate() {
 		let counts = &ship_counts[player_idx];
 		for (shiptype, &count) in counts.iter().enumerate() {
