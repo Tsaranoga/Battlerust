@@ -72,6 +72,15 @@ script = [
 "mkdir -p allrelease/x86_64-unknown-linux-gnu.2.30",
 "cp target/x86_64-unknown-linux-gnu/release/battlerust target/x86_64-unknown-linux-gnu/release/libbattlerustlib.so allrelease/x86_64-unknown-linux-gnu.2.30/",
 
+# Windows
+"cargo zigbuild --release --target x86_64-pc-windows-gnu",
+"mkdir -p allrelease/x86_64-pc-windows-gnu",
+"cp target/x86_64-pc-windows-gnu/release/battlerust.exe target/x86_64-pc-windows-gnu/release/battlerustlib.dll allrelease/x86_64-pc-windows-gnu/",
+"cargo zigbuild --release --target wasm32-unknown-unknown --lib --no-default-features --features wasm",
+"wasm-bindgen target/wasm32-unknown-unknown/release/battlerustlib.wasm --out-dir allrelease/wasm --web",
+
+
+
 "cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.31",
 "mkdir -p allrelease/x86_64-unknown-linux-gnu.2.31",
 "cp target/x86_64-unknown-linux-gnu/release/battlerust target/x86_64-unknown-linux-gnu/release/libbattlerustlib.so allrelease/x86_64-unknown-linux-gnu.2.31/",
@@ -104,10 +113,5 @@ script = [
 "mkdir -p allrelease/x86_64-unknown-linux-gnu.2.38",
 "cp target/x86_64-unknown-linux-gnu/release/battlerust target/x86_64-unknown-linux-gnu/release/libbattlerustlib.so allrelease/x86_64-unknown-linux-gnu.2.38/",
 
-# Windows
-"cargo zigbuild --release --target x86_64-pc-windows-gnu",
-"mkdir -p allrelease/x86_64-pc-windows-gnu",
-"cp target/x86_64-pc-windows-gnu/release/battlerust.exe target/x86_64-pc-windows-gnu/release/battlerustlib.dll allrelease/x86_64-pc-windows-gnu/",
-"cargo zigbuild --release --target wasm32-unknown-unknown --lib --no-default-features --features wasm",
-"wasm-bindgen target/wasm32-unknown-unknown/release/battlerustlib.wasm --out-dir allrelease/wasm --web"
+
 ]

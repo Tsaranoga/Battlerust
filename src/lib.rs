@@ -576,18 +576,25 @@ pub fn process_ships_after_round(ships:  &mut Vec<Ship>, round_stat: &mut Rounds
     ships.retain(|ship| ship.hull.get() != 0.0);
     for ship in ships.iter_mut() {
         ship.shield.set(ship_infos[ship.info as usize].shield_max);  
-        #[cfg(feature = "stun")]      
-        if get_flag_other(ship, OTHER_FLAG_STUNNING){
-            set_flag_self(ship, SELF_FLAG_STUNNED);
-            unset_flag_other(ship, OTHER_FLAG_STUNNING);
-        }
+
         #[cfg(feature = "escape")]      
         if get_flag_other(ship, OTHER_FLAG_ESCAPE){
             round_stat.stats[ship_infos[ship.info as usize].player_id][ship_infos[ship.info as usize].ship_id].escape += 1;
             continue;
         }
-
+        #[cfg(feature = "stun")]      
+        if get_flag_other(ship, OTHER_FLAG_STUNNING){
+            set_flag_self(ship, SELF_FLAG_STUNNED);
+            unset_flag_other(ship, OTHER_FLAG_STUNNING);
+            round_stat.stats[ship_infos[ship.info as usize].player_id][ship_infos[ship.info as usize].ship_id].stunned += 1;
+        }else{
         round_stat.stats[ship_infos[ship.info as usize].player_id][ship_infos[ship.info as usize].ship_id].attack += ship_infos[ship.info as usize].attack as i64;
+        }
+
+        #[cfg(not(feature = "stun"))]
+        {
+        round_stat.stats[ship_infos[ship.info as usize].player_id][ship_infos[ship.info as usize].ship_id].attack += ship_infos[ship.info as usize].attack as i64;
+        }
         round_stat.stats[ship_infos[ship.info as usize].player_id][ship_infos[ship.info as usize].ship_id].shield += ship.shield.get()  as i64;
         round_stat.stats[ship_infos[ship.info as usize].player_id][ship_infos[ship.info as usize].ship_id].hull += ship.hull.get() as i64;
         round_stat.stats[ship_infos[ship.info as usize].player_id][ship_infos[ship.info as usize].ship_id].amount += 1;
@@ -686,12 +693,13 @@ fn filter_ships_shields<'a>(ships: &'a [Ship], ship_infos: &'a [ShipInfo]) -> Ve
 }
 
 #[cfg(feature = "stun")]
-fn do_stun<'a, R: rand::Rng + ?Sized>(target: &Ship, target_info: &ShipInfo, statistics: &mut Statistics, attacker_info: &ShipInfo, rng: &mut R) {
+fn do_stun<'a, R: rand::Rng + ?Sized>(target: &Ship, target_info: &ShipInfo, statistics: &mut Statistics, attacker_info: &ShipInfo, rng: &mut R,attack : &f32) {
         if attacker_info.stun == 0.0 || target.hull.get() == 0.0 {
             return; // no stun capability, skip
         }
-        if rng.random::<f32>() < attacker_info.stun*(attacker_info.attack / target_info.hull_max) {
-            set_flag_other(target, 0);//TODO: add stun to statistics!!
+
+        if rng.random::<f32>() < attacker_info.stun*(attack / target_info.hull_max) {
+            set_flag_other(target, OTHER_FLAG_STUNNING);//TODO: add stun to statistics!!
             statistics.stunned_done[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += 1;
         }
 }
@@ -726,7 +734,7 @@ pub fn shoot_once<'a, R: rand::Rng + ?Sized>(_attacker: & Ship,attacker_info: &S
                 target.hull.set(target.hull.get() - damage_done);
                 // check for stun!
                     #[cfg(feature = "stun")]
-                    do_stun(target, target_info, _statistics, attacker_info, rng);
+                    do_stun(target, target_info, _statistics, attacker_info, rng, &attacker_info.attack);
 
             }else{
                 let penetration = attacker_info.attack-target.shield.get();
@@ -743,7 +751,7 @@ pub fn shoot_once<'a, R: rand::Rng + ?Sized>(_attacker: & Ship,attacker_info: &S
                     target.hull.set(target.hull.get()-damage_done);
                     // check for stun!
                     #[cfg(feature = "stun")]
-                    do_stun(target, target_info, _statistics, attacker_info, rng);
+                    do_stun(target, target_info, _statistics, attacker_info, rng, &attacker_info.attack);
                 }else{
                     _statistics.shield_hit[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += attacker_info.attack as f64;
                     target.shield.set(target.shield.get() - attacker_info.attack);
@@ -790,7 +798,7 @@ pub fn shoot_once<'a, R: rand::Rng + ?Sized>(_attacker: & Ship,attacker_info: &S
 	if attacker_info.rapidfire[target_info.ship_id] > 0.0
 		&& rng.random::<f32>() < attacker_info.rapidfire[target_info.ship_id] {
         #[cfg(feature = "rfcancel")]
-        if *_killed_ships<_total_ships {
+        if *_killed_ships == _total_ships {
             _statistics.rf_stopped[attacker_info.player_id][attacker_info.ship_id] += 1;
             break
         }
@@ -842,7 +850,7 @@ pub fn shoot_once_with_settings<'a, R: rand::Rng + ?Sized>(attacker_info: &ShipI
                 target.hull.set(target.hull.get() - damage_done);
                 // check for stun!
                     #[cfg(feature = "stun")]
-                    do_stun(target, target_info, _statistics, attacker_info, rng);
+                    do_stun(target, target_info, _statistics, attacker_info, rng, &shipattack);
 
             }else{
                 let penetration = shipattack-target.shield.get();
@@ -859,7 +867,7 @@ pub fn shoot_once_with_settings<'a, R: rand::Rng + ?Sized>(attacker_info: &ShipI
                     target.hull.set(target.hull.get()-damage_done);
                     // check for stun!
                     #[cfg(feature = "stun")]
-                    do_stun(target, target_info, _statistics, attacker_info, rng);
+                    do_stun(target, target_info, _statistics, attacker_info, rng, &shipattack);
                     
                 }else{
                     _statistics.shield_hit[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += attacker_info.attack as f64;
@@ -1219,6 +1227,8 @@ pub struct Shipstats {
     pub hull: i64,
     pub amount: usize,
     pub lost: usize,
+    #[cfg(feature= "stun")]
+    pub stunned: usize,
     #[cfg(feature = "escape")]
     pub escape: usize,
 }
@@ -1226,9 +1236,6 @@ pub struct Shipstats {
 impl Shipstats {
     pub fn is_zero(&self) -> bool {
         let base =
-            self.attack == 0 &&
-            self.shield == 0 &&
-            self.hull == 0 &&
             self.amount == 0 &&
             self.lost == 0;
 
@@ -1324,8 +1331,8 @@ pub struct RoundstatsInternal{
 
 impl RoundstatsInternal {
 	pub fn new(player_amount: usize,ship_amount: usize) -> Self {
-		    let empty_matrix = || {
-        vec![
+		RoundstatsInternal {
+			stats:         vec![
             vec![
                 Shipstats {
                     attack: 0,
@@ -1335,14 +1342,13 @@ impl RoundstatsInternal {
                     lost: 0,
                     #[cfg(feature = "escape")]
                     escape: 0,
+                    #[cfg(feature = "stun")]
+                    stunned: 0,
                 };
                 ship_amount
             ];
             player_amount
         ]
-    };
-		RoundstatsInternal {
-			stats: empty_matrix(),
 		}
 	}
 }
