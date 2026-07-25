@@ -5,9 +5,14 @@ use serde_json;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::collections::HashMap;
+#[cfg(not(feature = "wasm"))]
 use crossbeam::thread;
+#[cfg(not(feature = "wasm"))]
 use std::cell::UnsafeCell;
+#[cfg(feature = "wasm")]
+use std::cell::Cell;
 use rand::RngExt;
+#[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 use num_traits::ToPrimitive;
 
@@ -20,7 +25,9 @@ const OTHER_FLAG_STUNNING:u8=0;
 const OTHER_FLAG_ESCAPE:u8=1;
 
 //these threadcells are used so we can use multithreading
+#[cfg(not(feature = "wasm"))]
 pub struct ThreadCell<T>(pub UnsafeCell<T>);
+#[cfg(not(feature = "wasm"))]
 impl<T> ThreadCell<T> {
     #[inline]
     pub fn set(&self, value: T) {
@@ -34,7 +41,27 @@ impl<T> ThreadCell<T> {
         unsafe { *self.0.get() }
     }
 }
+
+#[cfg(feature = "wasm")]
+pub struct ThreadCell<T>(pub std::cell::Cell<T>);
+
+#[cfg(feature = "wasm")]
+impl<T: Copy> ThreadCell<T> {
+    #[inline(always)]
+    pub fn set(&self, value: T) {
+        self.0.set(value);
+    }
+
+    #[inline(always)]
+    pub fn get(&self) -> T {
+        self.0.get()
+    }
+}
+
+#[cfg(not(feature = "wasm"))]
 unsafe impl<T> Sync for ThreadCell<T> {}
+
+
 
 //structs to parse the input json
 #[derive(Debug, Deserialize)]
@@ -185,6 +212,7 @@ fn default_false_vec() -> Vec<bool> {
 fn default_bounce() -> Vec<f32> {
     vec![0.01]
 }
+
 #[cfg(any(feature = "explode", feature = "stun",feature = "shrapnel",feature = "escape"))]
 fn default_zero() -> Vec<f32> {
     vec![0.0]
@@ -241,7 +269,7 @@ pub struct ParseShipInfo {
 pub fn parse_battle(json_str: &str) -> Result<ParseBattleData, serde_json::Error> {
     serde_json::from_str(json_str)
 }
-
+#[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub fn wasm_fight_battle_rounds(input_json: &str) -> String {
     do_battle(input_json,false)
@@ -389,7 +417,7 @@ pub fn do_battle(json: &str, is_local: bool) -> String {
 
     let rt=execute_fight(parsed.rounds, &mut ships_a,&mut ships_b,
         &mut ship_a_infos,&mut ship_b_infos,&map_id_to_index,num_players_a,
-        num_players_b,&attacker_index_to_id,&defender_index_to_id,&map_index_to_id,is_local);
+        num_players_b,&attacker_index_to_id,&defender_index_to_id,&map_index_to_id);
     if let Some(start_time) = start {
     let elapsed = start_time.elapsed();
     println!("Elapsed time: {:} ms for the whole fight", elapsed.as_millis());
@@ -410,13 +438,23 @@ pub fn create_all_ships(
 
 			for _ in 0..count {
 				all_ships.push(Ship {
+                    #[cfg(not(feature = "wasm"))]
 					hull: ThreadCell(UnsafeCell::new(player.ships[shiptype].hull_max)),
+                    #[cfg(not(feature = "wasm"))]
 					shield: ThreadCell(UnsafeCell::new(player.ships[shiptype].shield_max)),
+                    #[cfg(feature = "wasm")]
+					hull: ThreadCell(Cell::new(player.ships[shiptype].hull_max)),
+                    #[cfg(feature = "wasm")]
+					shield: ThreadCell(Cell::new(player.ships[shiptype].shield_max)),
 					info: all_ship_infos.len() as u16,
-                    #[cfg(feature = "flags_self")]
+                    #[cfg(all(feature = "flags_self", not(feature = "wasm")))]
                     flagsself: ThreadCell(UnsafeCell::new(0)),
-                    #[cfg(feature = "flags_other")]
+                    #[cfg(all(feature = "flags_other",not(feature = "wasm")))]
                     flagsother: ThreadCell(UnsafeCell::new(0)),
+                    #[cfg(all(feature = "flags_self", feature = "wasm"))]
+                    flagsself: ThreadCell(Cell::new(0)),
+                    #[cfg(all(feature = "flags_other", feature = "wasm"))]
+                    flagsother: ThreadCell(Cell::new(0)),
 				});
                 
 			}
@@ -459,7 +497,7 @@ fn transform(n: f32) -> f32 {
 }
 
 
-fn execute_fight(rounds:usize,fleet_a:  &mut Vec<Ship>,fleet_b: &mut Vec<Ship>,ship_a_infos:&mut Vec<ShipInfo>,ship_b_infos: &mut Vec<ShipInfo>,map_id_to_index:&HashMap<usize, usize>,player_amt_a:usize,player_amt_b:usize,attacker_index_to_id: &HashMap<usize, usize>,defender_index_to_id: &HashMap<usize, usize>,map_index_to_id: &HashMap<usize, usize>,is_local: bool)-> String {
+fn execute_fight(rounds:usize,fleet_a:  &mut Vec<Ship>,fleet_b: &mut Vec<Ship>,ship_a_infos:&mut Vec<ShipInfo>,ship_b_infos: &mut Vec<ShipInfo>,map_id_to_index:&HashMap<usize, usize>,player_amt_a:usize,player_amt_b:usize,attacker_index_to_id: &HashMap<usize, usize>,defender_index_to_id: &HashMap<usize, usize>,map_index_to_id: &HashMap<usize, usize>)-> String {
     let mut  roundstat_attacker :Vec<RoundstatsInternal> = Vec::new();
     let mut  roundstat_defender :Vec<RoundstatsInternal> = Vec::new();
     let mut statistics_a_vec: Vec<Statistics> = Vec::new();
@@ -487,7 +525,7 @@ fn execute_fight(rounds:usize,fleet_a:  &mut Vec<Ship>,fleet_b: &mut Vec<Ship>,s
         }
         let mut statistics_a = Statistics::new(player_amt_a,player_amt_b,map_id_to_index.len());
         let mut statistics_b = Statistics::new(player_amt_b,player_amt_a,map_id_to_index.len());
-        multishoot( &fleet_a,   &fleet_b, &mut statistics_a, &mut statistics_b,ship_a_infos,ship_b_infos,is_local);
+        multishoot( &fleet_a,   &fleet_b, &mut statistics_a, &mut statistics_b,ship_a_infos,ship_b_infos);
         let mut round_stats_player_a=RoundstatsInternal::new(player_amt_a,map_id_to_index.len());
         let mut round_stats_player_b=RoundstatsInternal::new(player_amt_b,map_id_to_index.len());
         process_ships_after_round( fleet_a, &mut round_stats_player_a, ship_a_infos);
@@ -650,8 +688,9 @@ pub fn apply_round_values(ship: &mut ShipInfo, index: usize) {
 }
 
 
-fn multishoot(slicea: &[Ship],sliceb: &[Ship],statistic_a: &mut Statistics,statistics_b: &mut Statistics,ship_a_infos: &Vec<ShipInfo>,ship_b_infos: &Vec<ShipInfo>,is_local: bool) {
-if is_local {
+fn multishoot(slicea: &[Ship],sliceb: &[Ship],statistic_a: &mut Statistics,statistics_b: &mut Statistics,ship_a_infos: &Vec<ShipInfo>,ship_b_infos: &Vec<ShipInfo>) {
+#[cfg(not(feature = "wasm"))]
+    {
 
     thread::scope(|s| {
     s.spawn(|_| {
@@ -663,7 +702,10 @@ if is_local {
 })
 .unwrap();
 
-}else{
+}
+#[cfg(feature = "wasm")]
+{
+    
     shoot(slicea, sliceb, statistic_a, ship_a_infos, ship_b_infos);
     shoot(sliceb, slicea, statistics_b, ship_b_infos, ship_a_infos);
 }
