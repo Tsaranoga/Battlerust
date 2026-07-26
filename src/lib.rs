@@ -1,5 +1,3 @@
-use rand::prelude::IndexedRandom;
-use std::time::Instant;
 use serde::{Deserialize, Serialize, Deserializer};
 use serde_json;
 use std::ffi::{CStr, CString};
@@ -14,6 +12,8 @@ use std::cell::Cell;
 use rand::RngExt;
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
+use rand_xoshiro::Xoshiro128StarStar;
+use rand::SeedableRng;
 use num_traits::ToPrimitive;
 
 //flags
@@ -339,12 +339,7 @@ fn get_shipinfo(ship: &ParseShipInfo,rfs: Vec<Vec<f32>>,fleet_idx: usize,map_id_
 
 
 // main function that executes the battle, first create all the ships with a index mapping, then calls the fight
-pub fn do_battle(json: &str, is_local: bool) -> String {
-    let start: Option<Instant> = if is_local {
-        Some(Instant::now())
-    } else {
-        None
-    };
+pub fn do_battle(json: &str, _is_local: bool) -> String {
     let parsed: ParseBattleData = serde_json::from_str(json).unwrap();
     let mut map_id_to_index: HashMap<usize, usize> = HashMap::new();
     let mut map_index_to_id: HashMap<usize, usize> = HashMap::new();
@@ -403,25 +398,19 @@ pub fn do_battle(json: &str, is_local: bool) -> String {
             player_id: fleet_idx,
             ships: shipinfos,
         });
-    }    
-    
+    }     
+
     let (mut ships_a, mut ship_a_infos) = create_all_ships(&attackers, &attacker_amount);
     let (mut ships_b, mut ship_b_infos) = create_all_ships(&defenders, &defender_amount);
     let num_players_a=attackers.len();
     let num_players_b=defenders.len();
 
-    if let Some(start_time) = start {
-    let elapsed = start_time.elapsed();
-    println!("Elapsed time: {:} ms for init of ships", elapsed.as_millis());
-}
 
     let rt=execute_fight(parsed.rounds, &mut ships_a,&mut ships_b,
         &mut ship_a_infos,&mut ship_b_infos,&map_id_to_index,num_players_a,
         num_players_b,&attacker_index_to_id,&defender_index_to_id,&map_index_to_id);
-    if let Some(start_time) = start {
-    let elapsed = start_time.elapsed();
-    println!("Elapsed time: {:} ms for the whole fight", elapsed.as_millis());
-}
+
+
     rt
 }
 
@@ -712,9 +701,11 @@ fn multishoot(slicea: &[Ship],sliceb: &[Ship],statistic_a: &mut Statistics,stati
 
 }
 
-
 pub fn shoot(attacker_ships: & [Ship], defender_ships: & [Ship], statistics: &mut Statistics,ship_a_infos: &Vec<ShipInfo>,ship_b_infos: &Vec<ShipInfo>) {
-	let mut rng = rand::rng();
+	//let mut rng = rand::rng();
+    let seed = rand::rng().random::<[u8; 16]>();
+
+    let mut rng = Xoshiro128StarStar::from_seed(seed);
     #[cfg(feature = "bigshield")]
     let  mut shipshields=filter_ships_shields(defender_ships, ship_b_infos);
     #[cfg(not(feature = "bigshield"))]
@@ -746,7 +737,17 @@ fn do_stun<'a, R: rand::Rng + ?Sized>(target: &Ship, target_info: &ShipInfo, sta
         }
 }
 
-
+macro_rules! add_stat {
+    ($stats:expr, $field:ident, $a:expr, $b:expr, $c:expr, $d:expr, $value:expr) => {{
+        unsafe {
+            *$stats.$field
+                .get_unchecked_mut($a)
+                .get_unchecked_mut($b)
+                .get_unchecked_mut($c)
+                .get_unchecked_mut($d) += $value;
+        }
+    }};
+}
 
 pub fn shoot_once<'a, R: rand::Rng + ?Sized>(_attacker: & Ship,attacker_info: &ShipInfo, defender_ships: &'a [Ship], defender_infos: &Vec<ShipInfo>, _statistics: &mut Statistics, rng: &mut R, _shipshields: &mut Vec<&'a Ship>,_total_ships:usize,_killed_ships: &mut usize){
 	#[cfg(feature = "stun")]
@@ -760,19 +761,26 @@ pub fn shoot_once<'a, R: rand::Rng + ?Sized>(_attacker: & Ship,attacker_info: &S
     #[cfg(not(feature = "bigshield"))]
     let target: &Ship = defender_ships.choose(rng).unwrap();
     let target_info = &defender_infos[target.info as usize];
+    
+    let attacker_player_id=attacker_info.player_id;
+    let target_player_id=target_info.player_id;
+    let attacker_ship_id=attacker_info.ship_id;
+    let target_ship_id=target_info.ship_id;
+
 	// Check if attack is higher than target's shield_bounce
 	if attacker_info.attack > target_info.shield_bounce || target.shield.get() == 0.0 {
 		// Penetration: attack minus shield
 		if target.hull.get() == 0.0 {
-            _statistics.damage_dead[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += attacker_info.attack as f64;
+            add_stat!(_statistics,damage_dead,attacker_player_id,target_player_id,attacker_ship_id,target_ship_id,attacker_info.attack as f64);
         }else{
             if target.shield.get() == 0.0 {
                 let damage_done = attacker_info.attack.min( target.hull.get());
                 let overflow = attacker_info.attack - damage_done;
                 if overflow>0.0{
-                    _statistics.damage_dead[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += overflow as f64;
+                    add_stat!(_statistics,damage_dead,attacker_player_id,target_player_id,attacker_ship_id,target_ship_id,overflow as f64);
                 }
-                _statistics.damage_done[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += damage_done as f64;
+                //_statistics.damage_done[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += damage_done as f64;
+                add_stat!(_statistics,damage_done,attacker_player_id,target_player_id,attacker_ship_id,target_ship_id,damage_done as f64);
                 target.hull.set(target.hull.get() - damage_done);
                 // check for stun!
                     #[cfg(feature = "stun")]
@@ -785,22 +793,27 @@ pub fn shoot_once<'a, R: rand::Rng + ?Sized>(_attacker: & Ship,attacker_info: &S
                     let damage_done = penetration.min(target.hull.get());
                     let overflow = penetration - damage_done;
                     if overflow>0.0{
-                        _statistics.damage_dead[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += overflow as f64;
+                        //_statistics.damage_dead[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += overflow as f64;
+                        add_stat!(_statistics,damage_dead,attacker_player_id,target_player_id,attacker_ship_id,target_ship_id,overflow as f64);
                     }
-                    _statistics.damage_done[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += damage_done as f64;
-                    _statistics.shield_hit[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += target.shield.get() as f64;
+                    //_statistics.damage_done[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += damage_done as f64;
+                    add_stat!(_statistics,damage_done,attacker_player_id,target_player_id,attacker_ship_id,target_ship_id,damage_done as f64);
+                    //_statistics.shield_hit[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += target.shield.get() as f64;
+                    add_stat!(_statistics,shield_hit,attacker_player_id,target_player_id,attacker_ship_id,target_ship_id,target.shield.get() as f64);
                     target.shield.set(0.0);
                     target.hull.set(target.hull.get()-damage_done);
                     // check for stun!
                     #[cfg(feature = "stun")]
                     do_stun(target, target_info, _statistics, attacker_info, rng, &attacker_info.attack);
                 }else{
-                    _statistics.shield_hit[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += attacker_info.attack as f64;
+                    //_statistics.shield_hit[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += attacker_info.attack as f64;
+                    add_stat!(_statistics,shield_hit,attacker_player_id,target_player_id,attacker_ship_id,target_ship_id,attacker_info.attack as f64);
                     target.shield.set(target.shield.get() - attacker_info.attack);
                 }
             }
             if target.hull.get() == 0.0 {
-                _statistics.ship_destroyed[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += 1;
+                //_statistics.ship_destroyed[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += 1;
+                add_stat!(_statistics,ship_destroyed,attacker_player_id,target_player_id,attacker_ship_id,target_ship_id,1);
                    #[cfg(feature = "rfcancel")]
                     {
                         *_killed_ships += 1;
@@ -810,9 +823,11 @@ pub fn shoot_once<'a, R: rand::Rng + ?Sized>(_attacker: & Ship,attacker_info: &S
             #[cfg(feature = "explode")]
 			if target.hull.get() < target_info.explode_trigger && target.hull.get() > 0.0 {
 				if rng.random::<f32>() > target.hull.get() / target_info.hull_max {
-                    _statistics.explosion_damage_done[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += target.hull.get() as f64;
+                    //_statistics.explosion_damage_done[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += target.hull.get() as f64;
+                    add_stat!(_statistics,explosion_damage_done,attacker_player_id,target_player_id,attacker_ship_id,target_ship_id,target.hull.get() as f64);
                     target.hull.set( 0.0);
-                    _statistics.explosion_triggered[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += 1;
+                    //_statistics.explosion_triggered[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += 1;
+                    add_stat!(_statistics,explosion_triggered,attacker_player_id,target_player_id,attacker_ship_id,target_ship_id,1);
                    #[cfg(feature = "rfcancel")]
                     {
                         *_killed_ships += 1;
@@ -823,7 +838,8 @@ pub fn shoot_once<'a, R: rand::Rng + ?Sized>(_attacker: & Ship,attacker_info: &S
         }
 
 	} else {
-		_statistics.shield_bounced[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += attacker_info.attack as f64;
+		//_statistics.shield_bounced[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += attacker_info.attack as f64;
+        add_stat!(_statistics,shield_bounced,attacker_player_id,target_player_id,attacker_ship_id,target_ship_id,attacker_info.attack as f64);
 	}
 
 
@@ -844,7 +860,8 @@ pub fn shoot_once<'a, R: rand::Rng + ?Sized>(_attacker: & Ship,attacker_info: &S
             _statistics.rf_stopped[attacker_info.player_id][attacker_info.ship_id] += 1;
             break
         }
-		_statistics.rapid_fire_done[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += 1;
+		//_statistics.rapid_fire_done[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += 1;
+        add_stat!(_statistics,rapid_fire_done,attacker_player_id,target_player_id,attacker_ship_id,target_ship_id,1);
 		continue;
 	}
 	break;
@@ -857,7 +874,7 @@ fn escape_check<'a, R: rand::Rng + ?Sized>(target: &Ship, target_info: &ShipInfo
         if !get_flag_other(target,OTHER_FLAG_ESCAPE){
             if rng.random::<f32>() < target_info.escape_factor*(target.hull.get() / target_info.hull_max) {
                 set_flag_other(target, OTHER_FLAG_ESCAPE);
-                _statistics.escape_triggered[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += 1;
+                add_stat!(_statistics,escape_triggered,attacker_info.player_id,target_info.player_id,attacker_info.ship_id,target_info.ship_id,1);
             }
           }
     }
@@ -880,15 +897,15 @@ pub fn shoot_once_with_settings<'a, R: rand::Rng + ?Sized>(attacker_info: &ShipI
 	if shipattack > target_info.shield_bounce || target.shield.get() == 0.0 {
 		// Penetration: attack minus shield
 		if target.hull.get() == 0.0 {
-            _statistics.damage_dead[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += attacker_info.attack as f64;
+            add_stat!(_statistics,damage_dead,attacker_info.player_id,target_info.player_id,attacker_info.ship_id,target_info.ship_id,shipattack as f64);
         }else{
             if target.shield.get() == 0.0 {
                 let damage_done = shipattack.min( target.hull.get());
-                let overflow = attacker_info.attack - damage_done;
+                let overflow = shipattack - damage_done;
                 if overflow>0.0{
-                    _statistics.damage_dead[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += overflow as f64;
+                    add_stat!(_statistics,damage_dead,attacker_info.player_id,target_info.player_id,attacker_info.ship_id,target_info.ship_id,overflow as f64);
                 }
-                _statistics.damage_done[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += damage_done as f64;
+                add_stat!(_statistics,damage_done,attacker_info.player_id,target_info.player_id,attacker_info.ship_id,target_info.ship_id,damage_done as f64);
                 target.hull.set(target.hull.get() - damage_done);
                 // check for stun!
                     #[cfg(feature = "stun")]
@@ -900,11 +917,11 @@ pub fn shoot_once_with_settings<'a, R: rand::Rng + ?Sized>(attacker_info: &ShipI
                     // Apply damage to hull
                     let damage_done = penetration.min(target.hull.get());
                     let overflow = penetration - damage_done;
-                    if overflow>0.0{
-                        _statistics.damage_dead[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += overflow as f64;
+                    if overflow>0.0{                        
+                add_stat!(_statistics,damage_dead,attacker_info.player_id,target_info.player_id,attacker_info.ship_id,target_info.ship_id,overflow as f64);
                     }
-                    _statistics.damage_done[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += damage_done as f64;
-                    _statistics.shield_hit[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += target.shield.get() as f64;
+                    add_stat!(_statistics,damage_done,attacker_info.player_id,target_info.player_id,attacker_info.ship_id,target_info.ship_id,damage_done as f64);
+                    add_stat!(_statistics,shield_hit,attacker_info.player_id,target_info.player_id,attacker_info.ship_id,target_info.ship_id,target.shield.get() as f64);
                     target.shield.set(0.0);
                     target.hull.set(target.hull.get()-damage_done);
                     // check for stun!
@@ -912,12 +929,12 @@ pub fn shoot_once_with_settings<'a, R: rand::Rng + ?Sized>(attacker_info: &ShipI
                     do_stun(target, target_info, _statistics, attacker_info, rng, &shipattack);
                     
                 }else{
-                    _statistics.shield_hit[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += attacker_info.attack as f64;
+                    add_stat!(_statistics,shield_hit,attacker_info.player_id,target_info.player_id,attacker_info.ship_id,target_info.ship_id,shipattack as f64);
                     target.shield.set(target.shield.get() - attacker_info.attack);
                 }
             }
             if target.hull.get() == 0.0 {
-                _statistics.ship_destroyed[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += 1;
+                add_stat!(_statistics,ship_destroyed,attacker_info.player_id,target_info.player_id,attacker_info.ship_id,target_info.ship_id,1);
                     #[cfg(feature = "rfcancel")]
                     {
                         *_killed_ships += 1;
@@ -926,9 +943,9 @@ pub fn shoot_once_with_settings<'a, R: rand::Rng + ?Sized>(attacker_info: &ShipI
             #[cfg(feature = "explode")]
 			if target.hull.get() < target_info.explode_trigger && target.hull.get() > 0.0 {
 				if rng.random::<f32>() > target.hull.get() / target_info.hull_max {
-                    _statistics.explosion_damage_done[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += target.hull.get() as f64;
+                    add_stat!(_statistics,explosion_damage_done,attacker_info.player_id,target_info.player_id,attacker_info.ship_id,target_info.ship_id,target.hull.get() as f64);
                     target.hull.set( 0.0);
-                    _statistics.explosion_triggered[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += 1;
+                    add_stat!(_statistics,explosion_triggered,attacker_info.player_id,target_info.player_id,attacker_info.ship_id,target_info.ship_id,1);
                     #[cfg(feature = "rfcancel")]
                     {
                         *_killed_ships += 1;
@@ -939,11 +956,21 @@ pub fn shoot_once_with_settings<'a, R: rand::Rng + ?Sized>(attacker_info: &ShipI
         }
 
 	} else {
-		_statistics.shield_bounced[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += shipattack as f64;
+        add_stat!(_statistics,shield_bounced,attacker_info.player_id,target_info.player_id,attacker_info.ship_id,target_info.ship_id,shipattack as f64);
 	}
     #[cfg(feature = "escape")]
     escape_check(target, target_info, _statistics, attacker_info, rng);
 }
+
+#[inline(always)]
+fn choose_fast<'a, T, R: rand::Rng + ?Sized>(
+    slice: &'a [T],
+    rng: &mut R,
+) -> &'a T {
+    let idx = (rng.next_u32() as usize) % slice.len();
+    &slice[idx]
+}
+
 
 #[cfg(feature = "bigshield")]
 fn pick_random_ship<'a, R: rand::Rng + ?Sized>(
@@ -951,7 +978,6 @@ fn pick_random_ship<'a, R: rand::Rng + ?Sized>(
     fallback: &'a [Ship],
     rng: &mut R,
 ) -> Option<&'a Ship> {
-    
     while !ships.is_empty() {
         let idx = rng.random_range(0..ships.len());
 
@@ -962,7 +988,7 @@ fn pick_random_ship<'a, R: rand::Rng + ?Sized>(
         return Some(ships[idx]);
     }
     // fallback
-    return fallback.choose(rng)
+    return Some(choose_fast(fallback, rng))
      
 }
 
