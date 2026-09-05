@@ -15,6 +15,7 @@ use wasm_bindgen::prelude::*;
 use rand_xoshiro::Xoshiro128StarStar;
 use rand::SeedableRng;
 use num_traits::ToPrimitive;
+use indexmap::IndexMap;
 
 //flags
 #[cfg(feature = "stun")]
@@ -793,12 +794,9 @@ pub fn shoot_once<'a, R: rand::Rng + ?Sized>(_attacker: & Ship,attacker_info: &S
                     let damage_done = penetration.min(target.hull.get());
                     let overflow = penetration - damage_done;
                     if overflow>0.0{
-                        //_statistics.damage_dead[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += overflow as f64;
                         add_stat!(_statistics,damage_dead,attacker_player_id,target_player_id,attacker_ship_id,target_ship_id,overflow as f64);
                     }
-                    //_statistics.damage_done[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += damage_done as f64;
                     add_stat!(_statistics,damage_done,attacker_player_id,target_player_id,attacker_ship_id,target_ship_id,damage_done as f64);
-                    //_statistics.shield_hit[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += target.shield.get() as f64;
                     add_stat!(_statistics,shield_hit,attacker_player_id,target_player_id,attacker_ship_id,target_ship_id,target.shield.get() as f64);
                     target.shield.set(0.0);
                     target.hull.set(target.hull.get()-damage_done);
@@ -806,13 +804,11 @@ pub fn shoot_once<'a, R: rand::Rng + ?Sized>(_attacker: & Ship,attacker_info: &S
                     #[cfg(feature = "stun")]
                     do_stun(target, target_info, _statistics, attacker_info, rng, &attacker_info.attack);
                 }else{
-                    //_statistics.shield_hit[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += attacker_info.attack as f64;
                     add_stat!(_statistics,shield_hit,attacker_player_id,target_player_id,attacker_ship_id,target_ship_id,attacker_info.attack as f64);
                     target.shield.set(target.shield.get() - attacker_info.attack);
                 }
             }
             if target.hull.get() == 0.0 {
-                //_statistics.ship_destroyed[attacker_info.player_id][target_info.player_id][attacker_info.ship_id][target_info.ship_id] += 1;
                 add_stat!(_statistics,ship_destroyed,attacker_player_id,target_player_id,attacker_ship_id,target_ship_id,1);
                    #[cfg(feature = "rfcancel")]
                     {
@@ -1170,12 +1166,12 @@ fn get_stats_object(statistics:&Statistics,roundinfo:RoundstatsInternal,player_i
     battlestats
 }
 
-fn from_internal_to_external_roundstats(internal: RoundstatsInternal,player_index_to_id: &HashMap<usize, usize>,map_index_to_id: &HashMap<usize, usize>)-> HashMap<usize, HashMap<usize, Shipstats>> {
-    let mut external: HashMap<usize, HashMap<usize, Shipstats>> = HashMap::new();
+fn from_internal_to_external_roundstats(internal: RoundstatsInternal,player_index_to_id: &HashMap<usize, usize>,map_index_to_id: &HashMap<usize, usize>)-> IndexMap<usize, IndexMap<usize, Shipstats>> {
+    let mut external: IndexMap<usize, IndexMap<usize, Shipstats>> = IndexMap::new();
     for (player_idx, shipstats_vec) in internal.stats.iter().enumerate() {
         let player_id = player_index_to_id.get(&player_idx).unwrap();
         
-        let mut shipstats_map:  HashMap<usize, Shipstats> = HashMap::new();
+        let mut shipstats_map:  IndexMap<usize, Shipstats> = IndexMap::new();
         for (ship_idx, shipstats) in shipstats_vec.iter().enumerate() {
             let ship_id = map_index_to_id.get(&ship_idx).unwrap();
             shipstats_map.insert(*ship_id, shipstats.clone());
@@ -1319,12 +1315,12 @@ impl Shipstats {
     }
 }
 
-fn prune_shipstats_level2(map: &mut HashMap<usize, Shipstats>) -> bool {
+fn prune_shipstats_level2(map: &mut IndexMap<usize, Shipstats>) -> bool {
     map.retain(|_, stats| !stats.is_zero());
     map.is_empty()
 }
 
-fn prune_shipstats_level1(map: &mut HashMap<usize, HashMap<usize, Shipstats>>) {
+fn prune_shipstats_level1(map: &mut IndexMap<usize, IndexMap<usize, Shipstats>>) {
     map.retain(|_, inner| !prune_shipstats_level2(inner));
 }
 
@@ -1373,7 +1369,7 @@ maps:    HashMap<usize,
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Battlestats {
     #[serde(rename = "Roundstats")]
-    pub roundstats: HashMap<usize, HashMap<usize, Shipstats>>,
+    pub roundstats: IndexMap<usize, IndexMap<usize, Shipstats>>,
 
     #[serde(rename = "Statistics")]
     pub general_statistics: GeneralStatistics,
